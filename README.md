@@ -1,74 +1,54 @@
-# PurePDF — 100% Free, Zero-Watermark, On-Device iPhone Scanner, OCR, Signer & PDF Size Reducer
+# PurePDF — 100% Free, Zero-Watermark, On-Device Scanner, OCR, Signer & PDF Size Reducer
 
-**PurePDF** is a native iOS (`Swift` + `SwiftUI`) document studio built to replace predatory $9.99/week subscription scanner and PDF utility apps with a **100% free, zero-ad, zero-watermark, 100% offline/on-device** experience.
+**PurePDF** is a 3-platform monorepo (**iOS**, **Android**, and **Web / Installable PWA**) built to replace predatory $9.99/week subscription scanner and PDF utility apps with a **100% free, zero-ad, zero-watermark, 100% on-device** experience.
 
-Every byte of processing runs locally on the iPhone using native Apple hardware-accelerated frameworks (`VisionKit`, `Vision` Neural Engine, `PDFKit`, and `CoreGraphics`)—meaning **$0.00 in server bills, zero third-party API keys, and absolute document privacy**.
-
----
-
-## Key Features
-
-1. **Smart PDF Size Reducer (`PDFCompressionEngine.swift`)**
-   - Shrinks bloated PDFs on-device to pass strict government, visa, university, and job portal limits.
-   - Built-in presets: **Strict Portal (`<300 KB`)**, **Standard Upload (`<500 KB`)**, **Balanced Email (`<1.5 MB`)**, **High Quality (`200 DPI`)**, plus custom **DPI (`50–250 DPI`)** and **JPEG Quality (`15%–92%`)** sliders and an optional **Crisp Grayscale** bit-depth reducer.
-   - Real-time **Before vs. After** byte size comparison and percentage saved badge.
-
-2. **Watermark-Free Document Scanner (`DocumentScannerService.swift`)**
-   - Uses Apple's native `VNDocumentCameraViewController` (`VisionKit`) for automatic perspective crop and edge detection, plus `PhotosPicker` import.
-   - Includes **Magic Crisp B&W** (shadow removal & high-contrast enhancement), **Clean Grayscale**, and **Original Color** filters.
-   - Exports multi-page PDFs with **zero watermarks**.
-
-3. **Finger & Apple Pencil PDF Signer (`PDFSignerEngine.swift`)**
-   - Draw smooth vector ink signatures in **Jet Black**, **Legal Blue**, or **Fountain Navy**.
-   - Automatically saves your signature locally on-device for 1-tap reuse.
-   - Position and scale your signature on any page, add an optional **Name/Title Stamp** and **Today's Date Stamp**, and flatten directly into a signed PDF.
-
-4. **100% Offline Neural Engine OCR (`OCRService.swift`)**
-   - Powered by Apple's on-device `VNRecognizeTextRequest` (`.accurate` recognition level with language correction).
-   - Extracts copyable, selectable text from every page of any PDF with confidence scores and 1-tap **Copy All**.
-
-5. **Merge, Rotate & Page Toolkit (`PDFPageToolkit.swift`)**
-   - Combine multiple PDFs into a single document, rotate pages by $90^\circ$, or delete unwanted pages.
+Every byte of processing runs locally on the user's device—meaning **$0.00 in server bills forever, zero paid third-party APIs, and complete document privacy**.
 
 ---
 
-## Project Structure
+## 3 Platforms Included in This Repository
 
 ```text
 purepdf/
-├── PurePDF.xcodeproj/                  # Native Xcode project
-├── Package.swift                       # Swift Package manifest for VS Code / SourceKit-LSP
-├── .vscode/                            # VS Code tasks & Swift extension config
-└── PurePDF/
-    ├── Info.plist                      # Local camera & photo permissions
-    ├── PurePDFApp.swift                # @main SwiftUI app entry point
-    ├── Models/
-    │   └── PDFVaultItem.swift          # Local on-device PDF Vault & starter sample PDF generator
-    ├── Services/
-    │   ├── PDFCompressionEngine.swift  # On-device DPI & JPEG PDF Size Reducer
-    │   ├── DocumentScannerService.swift# VisionKit camera wrapper & Magic B&W filter
-    │   ├── OCRService.swift            # Vision Neural Engine offline OCR
-    │   ├── PDFSignerEngine.swift       # Freehand signature renderer & PDF stamper
-    │   └── PDFPageToolkit.swift        # Multi-PDF merge, page rotate & delete
-    └── Views/
-        ├── HomeView.swift              # Main TabView & Bento dashboard
-        ├── ScannerStudioView.swift     # Camera & photo scanner UI
-        ├── CompressorStudioView.swift  # PDF Size Reducer UI
-        ├── SignerStudioView.swift      # Finger signature & PDF stamp UI
-        ├── OCRStudioView.swift         # Offline OCR extraction UI
-        ├── MergeSplitStudioView.swift  # Multi-PDF combiner & page tools UI
-        └── PDFKitRepresentedView.swift # Native PDFView preview sheet
+├── ios/        # 1. Native iPhone App (Swift + SwiftUI)
+├── android/    # 2. Native Android App (Kotlin + Jetpack Compose)
+├── web/        # 3. Universal Web App & Installable PWA (HTML5 + PDF.js + pdf-lib + Tesseract.js)
+└── index.html  # Root GitHub Pages entry point -> ./web/index.html
 ```
+
+| Platform | Path | Tech Stack ($0 Cost / 100% On-Device) |
+|---|---|---|
+| **1. iOS (iPhone & iPad)** | [`ios/`](./ios) | `Swift`, `SwiftUI`, `VisionKit` (`VNDocumentCameraViewController`), `Vision` (`VNRecognizeTextRequest` Neural Engine OCR), `PDFKit`, `CoreGraphics` |
+| **2. Android** | [`android/`](./android) | `Kotlin`, `Jetpack Compose` (Material 3), `PdfRenderer` & `PdfDocument`, `ColorMatrix` B&W enhancer, bundled on-device `com.google.mlkit:text-recognition` (Zero Internet permission) |
+| **3. Web & PWA** | [`web/`](./web) | `HTML5`, `Tailwind CSS`, `PDF.js` (Mozilla), `pdf-lib`, `Tesseract.js` WebAssembly OCR, offline Service Worker (`sw.js`) |
 
 ---
 
-## How to Open in VS Code or Run on Your iPhone for $0
+## 5 Core Features Across All 3 Versions
 
-### Option 1: Edit & Build in VS Code
-1. Open this folder (`purepdf`) in **VS Code** or **Antigravity**.
-2. Press `Cmd + Shift + B` to run the configured build task, or run `open PurePDF.xcodeproj` in the terminal.
+1. **Smart PDF Size Reducer**
+   - Compresses PDFs on-device to pass strict government, visa, university, and job portal limits.
+   - Built-in presets: **Strict Portal (`<300 KB`)**, **Standard Upload (`<500 KB`)**, **Balanced Email (`<1.5 MB`)**, **High Quality (`200 DPI`)**, plus custom **DPI** and **JPEG Quality** sliders and a **Crisp Grayscale** bit-depth reducer.
+   - Live **Before vs. After** size comparison and exact percentage saved.
 
-### Option 2: Run on iOS Simulator or Your Physical iPhone (Free Personal Team)
-1. Open `PurePDF.xcodeproj` in **Xcode**.
-2. In **Signing & Capabilities**, select your free **Personal Team** (your standard Apple ID—$0 cost, no paid developer membership required to install on your own iPhone).
-3. Select an iPhone Simulator or your connected iPhone and press **`Cmd + R`**.
+2. **Watermark-Free Document Scanner**
+   - Camera capture & photo import with **Magic Crisp B&W** (shadow removal & high-contrast enhancement), **Clean Grayscale**, and **Original Color** filters.
+   - Exports multi-page PDFs with **zero watermarks**.
+
+3. **Finger / Stylus / Mouse PDF Signer & Date Filler**
+   - Smooth signature drawing pad in **Legal Blue**, **Jet Black**, or **Fountain Navy**.
+   - Adjustable placement, optional **Name/Title Stamp**, and **Today's Date Stamp**, flattened directly onto the PDF.
+
+4. **100% Offline On-Device OCR**
+   - Extracts selectable, copyable text from every page of any PDF with zero cloud calls.
+
+5. **Multi-PDF Merger & Page Toolkit**
+   - Combine multiple PDFs into a single document, rotate pages $90^\circ$, or delete pages.
+
+---
+
+## Quick Start
+
+* **iOS (`ios/`):** Open `ios/PurePDF.xcodeproj` in **Xcode**, select your free Apple ID Personal Team or Simulator, and press `Cmd + R`.
+* **Android (`android/`):** Open the `android/` folder in **Android Studio** and click **Run** on any Android device or emulator (`minSdk 26`).
+* **Web (`web/`):** Open `web/index.html` in any browser, or enable **GitHub Pages** on the `main` branch to publish live at `https://maitreerawat.github.io/purepdf/`.

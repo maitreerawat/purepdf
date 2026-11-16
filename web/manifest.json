@@ -1,0 +1,16 @@
+{
+  "name": "PurePDF — Free Scanner, OCR, Signer & PDF Size Reducer",
+  "short_name": "PurePDF",
+  "description": "100% Free, Zero-Watermark, Zero-Ad, On-Device Document Scanner, PDF Size Reducer, Signer & OCR.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0d9488",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Crect width='120' height='120' rx='26' fill='%230d9488'/%3E%3Ctext x='60' y='76' font-family='sans-serif' font-weight='bold' font-size='44' fill='white' text-anchor='middle'%3EPDF%3C/text%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    }
+  ]
+}

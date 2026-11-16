@@ -2,19 +2,14 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Build PurePDF (iOS Simulator)",
+      "label": "1. Open iOS App in Xcode",
       "type": "shell",
-      "command": "xcodebuild -project PurePDF.xcodeproj -scheme PurePDF -sdk iphonesimulator -configuration Debug build",
-      "group": {
-        "kind": "build",
-        "isDefault": true
-      },
-      "problemMatcher": []
+      "command": "open ios/PurePDF.xcodeproj"
     },
     {
-      "label": "Open in Xcode",
+      "label": "2. Preview Web Studio Locally (Port 8080)",
       "type": "shell",
-      "command": "open PurePDF.xcodeproj"
+      "command": "python3 -m http.server 8080 --directory web"
     }
   ]
 }

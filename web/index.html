@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>PurePDF — 100% Free, Zero-Watermark Scanner, OCR, Signer & PDF Size Reducer</title>
+  <link rel="manifest" href="./manifest.json" />
+  <meta name="theme-color" content="#0d9488" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Open-Source Client-Side PDF & OCR Engines (100% Free MIT/Apache, Zero Server Calls) -->
+  <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen pb-24 selection:bg-teal-500 selection:text-white">
+
+  <!-- Top Header -->
+  <header class="sticky top-0 z-30 backdrop-blur-md bg-slate-900/85 border-b border-slate-800">
+    <div class="max-w-5xl mx-auto px-4 py-3.5 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-500 to-emerald-600 flex items-center justify-center font-black text-white shadow-lg shadow-teal-500/20">
+          PDF
+        </div>
+        <div>
+          <h1 class="font-bold text-lg tracking-tight flex items-center gap-2">
+            PurePDF
+            <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-teal-500/15 text-teal-300 border border-teal-500/30">
+              100% Free • Zero Cloud
+            </span>
+          </h1>
+          <p class="text-xs text-slate-400">On-Device Scanner, PDF Size Reducer, Signer &amp; OCR (Web • iOS • Android)</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <label class="cursor-pointer inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold transition shadow">
+          <span>+ Import PDF</span>
+          <input id="global-pdf-input" type="file" accept="application/pdf" multiple class="hidden" />
+        </label>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Container -->
+  <main class="max-w-5xl mx-auto px-4 pt-6 space-y-6">
+
+    <!-- Status Banner -->
+    <div id="status-banner" class="hidden rounded-xl bg-emerald-950/90 border border-emerald-500/40 px-4 py-3 text-sm text-emerald-200 flex items-center justify-between">
+      <span id="status-banner-text"></span>
+      <button onclick="document.getElementById('status-banner').classList.add('hidden')" class="text-emerald-400 hover:text-white text-xs font-bold">Dismiss</button>
+    </div>
+
+    <!-- Desktop / Tablet Navigation Pills -->
+    <nav class="grid grid-cols-2 sm:grid-cols-5 gap-2 bg-slate-900/90 p-1.5 rounded-2xl border border-slate-800">
+      <button data-tab="studio" class="tab-btn bg-teal-600 text-white font-semibold py-2.5 px-3 rounded-xl text-xs transition">
+        1. Studio &amp; Merge
+      </button>
+      <button data-tab="scanner" class="tab-btn text-slate-300 hover:text-white font-semibold py-2.5 px-3 rounded-xl text-xs transition">
+        2. Document Scanner
+      </button>
+      <button data-tab="compressor" class="tab-btn text-slate-300 hover:text-white font-semibold py-2.5 px-3 rounded-xl text-xs transition">
+        3. PDF Size Reducer
+      </button>
+      <button data-tab="signer" class="tab-btn text-slate-300 hover:text-white font-semibold py-2.5 px-3 rounded-xl text-xs transition">
+        4. Sign &amp; Fill PDF
+      </button>
+      <button data-tab="ocr" class="tab-btn text-slate-300 hover:text-white font-semibold py-2.5 px-3 rounded-xl text-xs transition col-span-2 sm:col-span-1">
+        5. Offline OCR
+      </button>
+    </nav>
+
+    <!-- ================= TAB 1: STUDIO DASHBOARD & MERGE ================= -->
+    <section id="tab-studio" class="tab-panel space-y-6">
+      <div class="rounded-2xl bg-gradient-to-r from-teal-900/80 via-slate-900 to-indigo-950/80 border border-teal-500/30 p-6">
+        <span class="inline-block text-[11px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-teal-500/20 text-teal-300 mb-2">
+          100% Client-Side Privacy Guarantee
+        </span>
+        <h2 class="text-xl sm:text-2xl font-bold text-white">Your documents never leave your device.</h2>
+        <p class="text-sm text-slate-300 mt-1 max-w-3xl">
+          Every scan, compression, signature, and OCR pass executes strictly inside your device's local memory using WebAssembly &amp; HTML5 Canvas—zero watermarks, zero subscriptions, $0.00 forever.
+        </p>
+      </div>
+
+      <!-- Vault List & Multi-PDF Merger -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 class="font-bold text-base">On-Device PDF Vault (<span id="vault-count">0</span>)</h3>
+            <p class="text-xs text-slate-400">Select 2 or more PDFs to merge them in order, or click any action to compress, sign, or download.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="btn-merge-selected" disabled class="px-4 py-2 rounded-xl bg-purple-600 disabled:bg-slate-800 disabled:text-slate-500 text-white text-xs font-bold transition">
+              Merge Selected PDFs (0)
+            </button>
+          </div>
+        </div>
+
+        <div id="vault-list" class="space-y-2.5"></div>
+      </div>
+    </section>
+
+    <!-- ================= TAB 2: WATERMARK-FREE SCANNER ================= -->
+    <section id="tab-scanner" class="tab-panel hidden space-y-5">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 class="font-bold text-lg">Watermark-Free Document Scanner</h3>
+            <p class="text-xs text-slate-400">Snap pages with your camera or import photos, apply Magic Crisp B&amp;W shadow removal, and export a clean multi-page PDF.</p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <label class="cursor-pointer px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold">
+              + Camera / Photos
+              <input id="scan-image-input" type="file" accept="image/*" capture="environment" multiple class="hidden" />
+            </label>
+            <button id="btn-demo-receipt" class="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold">
+              Load Demo Receipt
+            </button>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3 pt-2">
+          <span class="text-xs font-semibold text-slate-400">Enhancement Filter:</span>
+          <select id="scan-filter-select" class="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white">
+            <option value="bw">Magic Crisp B&amp;W (Shadow Removal)</option>
+            <option value="gray">Clean Grayscale</option>
+            <option value="color">Original Color</option>
+          </select>
+
+          <input id="scan-doc-title" type="text" value="Scanned_Document" placeholder="Output PDF Name" class="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white flex-1 min-w-[180px]" />
+
+          <button id="btn-save-scanned-pdf" disabled class="px-4 py-2.5 rounded-xl bg-emerald-600 disabled:bg-slate-800 disabled:text-slate-500 text-white text-xs font-bold">
+            Save Watermark-Free PDF
+          </button>
+        </div>
+
+        <div id="scan-pages-preview" class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3"></div>
+      </div>
+    </section>
+
+    <!-- ================= TAB 3: SMART PDF SIZE REDUCER ================= -->
+    <section id="tab-compressor" class="tab-panel hidden space-y-5">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-5">
+        <div>
+          <h3 class="font-bold text-lg">Smart PDF Size Reducer</h3>
+          <p class="text-xs text-slate-400">Shrink multi-megabyte PDFs to pass strict government, visa, university, and job portal limits (&lt;300 KB / &lt;500 KB) 100% in your browser.</p>
+        </div>
+
+        <div class="grid sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 mb-1.5">1. Select PDF from Vault</label>
+            <select id="compress-pdf-select" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white"></select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 mb-1.5">2. Target Size Preset</label>
+            <select id="compress-preset-select" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white">
+              <option value="78,0.32">Strict Portal (&lt;300 KB) — 78 DPI</option>
+              <option value="110,0.48" selected>Standard Upload (&lt;500 KB) — 110 DPI</option>
+              <option value="145,0.65">Balanced Email (&lt;1.5 MB) — 145 DPI</option>
+              <option value="200,0.82">High Quality Print — 200 DPI</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid sm:grid-cols-2 gap-4 bg-slate-950/60 p-4 rounded-xl border border-slate-800">
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-slate-400">Resolution (DPI)</span>
+              <span id="compress-dpi-label" class="font-bold text-orange-400">110 DPI</span>
+            </div>
+            <input id="compress-dpi-slider" type="range" min="55" max="240" step="5" value="110" class="w-full accent-orange-500" />
+          </div>
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-slate-400">JPEG Compression Quality</span>
+              <span id="compress-qual-label" class="font-bold text-orange-400">48%</span>
+            </div>
+            <input id="compress-qual-slider" type="range" min="15" max="92" step="2" value="48" class="w-full accent-orange-500" />
+          </div>
+          <label class="flex items-center gap-2 text-xs text-slate-300 sm:col-span-2 cursor-pointer">
+            <input id="compress-grayscale-toggle" type="checkbox" class="rounded accent-orange-500" />
+            <span>Convert pages to Crisp Grayscale (strips color channel bloat for ~25% extra reduction)</span>
+          </label>
+        </div>
+
+        <button id="btn-run-compress" class="w-full py-3.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-bold text-sm shadow-lg shadow-orange-600/20 transition">
+          Reduce PDF File Size Now
+        </button>
+
+        <div id="compress-result-card" class="hidden rounded-xl bg-emerald-950/50 border border-emerald-500/40 p-4 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <div class="text-xs text-emerald-300 font-bold uppercase">Compression Complete</div>
+            <div id="compress-stats-text" class="text-base font-bold text-white mt-0.5"></div>
+          </div>
+          <button id="btn-download-compressed" class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold">
+            Download Compressed PDF
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= TAB 4: FINGER / MOUSE PDF SIGNER ================= -->
+    <section id="tab-signer" class="tab-panel hidden space-y-5">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+        <div>
+          <h3 class="font-bold text-lg">Finger &amp; Stylus PDF Signer</h3>
+          <p class="text-xs text-slate-400">Draw your signature below, add an optional name or today's date stamp, and flatten it onto your PDF.</p>
+        </div>
+
+        <div class="grid sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 mb-1">Target PDF</label>
+            <select id="sign-pdf-select" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white"></select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 mb-1">Ink Color</label>
+            <select id="sign-ink-color" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+              <option value="#1d4ed8">Legal Blue</option>
+              <option value="#0f172a">Jet Black</option>
+              <option value="#1e3a8a">Fountain Navy</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold text-slate-400">Draw Signature Inside Pad:</span>
+            <button id="btn-clear-sig" class="text-xs text-rose-400 hover:text-rose-300 font-semibold">Clear Signature Pad</button>
+          </div>
+          <div class="bg-white rounded-2xl p-2 border-2 border-dashed border-indigo-400">
+            <canvas id="signature-canvas" width="640" height="180" class="w-full h-[150px] touch-none cursor-crosshair"></canvas>
+          </div>
+        </div>
+
+        <div class="grid sm:grid-cols-3 gap-3 bg-slate-950/60 p-4 rounded-xl border border-slate-800">
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Horizontal Position (%)</label>
+            <input id="sign-pos-x" type="range" min="10" max="80" value="38" class="w-full accent-indigo-500" />
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Vertical Position from Bottom (%)</label>
+            <input id="sign-pos-y" type="range" min="10" max="85" value="22" class="w-full accent-indigo-500" />
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Optional Name / Title Stamp</label>
+            <input id="sign-custom-text" type="text" placeholder="e.g. Maitree Rawat" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white" />
+          </div>
+          <label class="flex items-center gap-2 text-xs text-slate-300 sm:col-span-3 cursor-pointer">
+            <input id="sign-date-toggle" type="checkbox" checked class="rounded accent-indigo-500" />
+            <span>Stamp Today's Date next to signature</span>
+          </label>
+        </div>
+
+        <button id="btn-apply-signature" class="w-full py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm shadow-lg shadow-indigo-600/20 transition">
+          Stamp Signature &amp; Save Signed PDF
+        </button>
+      </div>
+    </section>
+
+    <!-- ================= TAB 5: OFFLINE OCR STUDIO ================= -->
+    <section id="tab-ocr" class="tab-panel hidden space-y-5">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 class="font-bold text-lg">On-Device Optical Character Recognition (OCR)</h3>
+            <p class="text-xs text-slate-400">Extracts selectable, copyable text from any PDF in your vault locally in your browser.</p>
+          </div>
+          <button id="btn-copy-ocr" class="hidden px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold">
+            Copy All Extracted Text
+          </button>
+        </div>
+
+        <div class="flex flex-wrap gap-3">
+          <select id="ocr-pdf-select" class="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white"></select>
+          <button id="btn-run-ocr" class="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold">
+            Extract Text Now
+          </button>
+        </div>
+
+        <div id="ocr-output-container" class="space-y-3"></div>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="./app.js"></script>
+</body>
+</html>
