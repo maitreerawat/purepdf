@@ -1,0 +1,9 @@
+{
+  "files.exclude": {
+    "**/.DS_Store": true,
+    "**/.build": true,
+    "**/DerivedData": true
+  },
+  "editor.formatOnSave": true,
+  "editor.tabSize": 4
+}
