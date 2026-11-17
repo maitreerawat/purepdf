@@ -13,12 +13,14 @@ import android.text.format.Formatter
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas as ComposeCanvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -29,11 +31,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
@@ -43,6 +49,7 @@ import com.maitreerawat.purepdf.model.PdfVaultManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 enum class AndroidTab(val label: String) {
     STUDIO("Studio"),
@@ -148,12 +155,13 @@ fun PurePdfAppScreen() {
                     }
                 )
                 AndroidTab.SCAN -> ScannerSection(
-                    onSaveScannedPdf = { pages, filter, title ->
+                    onSaveScannedPdf = { pages, filter, layoutMode, title ->
                         scope.launch {
                             val bytes = withContext(Dispatchers.IO) {
-                                DocumentScannerEngine.buildWatermarkFreePdf(pages, filter)
+                                DocumentScannerEngine.buildWatermarkFreePdf(pages, filter, layoutMode)
                             }
-                            PdfVaultManager.savePdfBytes(context, bytes, title, "Scanned")
+                            val badge = if (layoutMode == AndroidScanLayoutMode.ID_CARD_TWO_UP) "ID_2Up" else "Scanned"
+                            PdfVaultManager.savePdfBytes(context, bytes, title, badge)
                             vaultItems = PdfVaultManager.loadVaultItems(context)
                             statusMessage = "Saved Watermark-Free Scan (${Formatter.formatFileSize(context, bytes.size.toLong())})"
                             activeTab = AndroidTab.STUDIO
@@ -177,7 +185,14 @@ fun PurePdfAppScreen() {
                         activeTab = AndroidTab.STUDIO
                     }
                 )
-                AndroidTab.OCR -> OcrSection(items = vaultItems)
+                AndroidTab.OCR -> OcrSection(
+                    items = vaultItems,
+                    onSaveSearchablePdf = { bytes, title ->
+                        PdfVaultManager.savePdfBytes(context, bytes, title, "SearchableOCR")
+                        vaultItems = PdfVaultManager.loadVaultItems(context)
+                        statusMessage = "Saved Searchable OCR PDF (${Formatter.formatFileSize(context, bytes.size.toLong())})"
+                    }
+                )
             }
         }
     }
@@ -222,10 +237,10 @@ private fun StudioDashboardSection(
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                 Button(onClick = { onSelectTab(AndroidTab.SCAN) }, modifier = Modifier.weight(1f)) {
-                    Text("Scan Document")
+                    Text("Scan / ID 2-Up")
                 }
                 Button(onClick = { onSelectTab(AndroidTab.COMPRESS) }, modifier = Modifier.weight(1f)) {
-                    Text("Reduce PDF Size")
+                    Text("Auto-Fit KB")
                 }
             }
         }
@@ -284,11 +299,12 @@ private fun StudioDashboardSection(
 
 @Composable
 private fun ScannerSection(
-    onSaveScannedPdf: (List<Bitmap>, AndroidScanFilter, String) -> Unit
+    onSaveScannedPdf: (List<Bitmap>, AndroidScanFilter, AndroidScanLayoutMode, String) -> Unit
 ) {
     val context = LocalContext.current
     var pages by remember { mutableStateOf(listOf<Bitmap>()) }
     var filter by remember { mutableStateOf(AndroidScanFilter.MAGIC_CRISP_BW) }
+    var layoutMode by remember { mutableStateOf(AndroidScanLayoutMode.STANDARD_ONE_PER_PAGE) }
     var docTitle by remember { mutableStateOf("Scanned_Document") }
 
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -302,29 +318,54 @@ private fun ScannerSection(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Watermark-Free Document Scanner", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        Text("Watermark-Free Scanner & 2-Sided ID Card Studio", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AndroidScanLayoutMode.entries.forEach { mode ->
+                FilterChip(
+                    selected = layoutMode == mode,
+                    onClick = { layoutMode = mode },
+                    label = { Text(mode.label, fontSize = 11.sp) }
+                )
+            }
+        }
+
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Button(onClick = { photoPicker.launch("image/*") }, modifier = Modifier.weight(1f)) {
                 Text("Add Photo / Scan")
             }
             OutlinedButton(
                 onClick = {
-                    val bmp = Bitmap.createBitmap(600, 800, Bitmap.Config.ARGB_8888)
-                    val c = Canvas(bmp)
-                    c.drawColor(AndroidColor.rgb(238, 238, 238))
-                    val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                        color = AndroidColor.BLACK
-                        textSize = 24f
-                        isFakeBoldText = true
+                    layoutMode = AndroidScanLayoutMode.ID_CARD_TWO_UP
+                    val front = Bitmap.createBitmap(640, 400, Bitmap.Config.ARGB_8888).apply {
+                        val c = Canvas(this)
+                        c.drawColor(AndroidColor.rgb(225, 240, 245))
+                        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                            color = AndroidColor.BLACK
+                            textSize = 24f
+                            isFakeBoldText = true
+                        }
+                        c.drawText("IDENTIFICATION CARD — FRONT", 40f, 90f, p)
+                        c.drawText("Name: MAITREE RAWAT", 40f, 160f, p)
+                        c.drawText("ID #: PURE-2026-0001", 40f, 220f, p)
                     }
-                    c.drawText("PUREPDF ANDROID RECEIPT", 60f, 120f, p)
-                    c.drawText("Zero Watermarks:  $0.00", 60f, 200f, p)
-                    c.drawText("Offline OCR:      $0.00", 60f, 250f, p)
-                    pages = pages + bmp
+                    val back = Bitmap.createBitmap(640, 400, Bitmap.Config.ARGB_8888).apply {
+                        val c = Canvas(this)
+                        c.drawColor(AndroidColor.rgb(240, 240, 240))
+                        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                            color = AndroidColor.DKGRAY
+                            textSize = 22f
+                            isFakeBoldText = true
+                        }
+                        c.drawText("IDENTIFICATION CARD — BACK", 40f, 100f, p)
+                        c.drawText("<<<<PUREPDF<<ONDEVICE<<2026<<<<", 40f, 190f, p)
+                    }
+                    pages = pages + listOf(front, back)
+                    docTitle = "ID_Card_Front_And_Back"
                 },
                 modifier = Modifier.weight(1f)
             ) {
-                Text("Load Demo Receipt")
+                Text("Demo Front+Back ID")
             }
         }
 
@@ -346,11 +387,16 @@ private fun ScannerSection(
         )
 
         Button(
-            onClick = { onSaveScannedPdf(pages, filter, docTitle) },
+            onClick = { onSaveScannedPdf(pages, filter, layoutMode, docTitle) },
             enabled = pages.isNotEmpty(),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Save Watermark-Free PDF (${pages.size} Pages)")
+            Text(
+                if (layoutMode == AndroidScanLayoutMode.ID_CARD_TWO_UP)
+                    "Save 2-Sided ID Card PDF (${pages.size} Sides)"
+                else
+                    "Save Watermark-Free PDF (${pages.size} Pages)"
+            )
         }
     }
 }
@@ -363,7 +409,8 @@ private fun CompressorSection(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var selectedIdx by remember { mutableStateOf(0) }
-    var preset by remember { mutableStateOf(AndroidCompressionPreset.STANDARD_UPLOAD) }
+    var preset by remember { mutableStateOf(AndroidCompressionPreset.AUTO_TARGET_KB) }
+    var targetKb by remember { mutableStateOf(450) }
     var dpi by remember { mutableStateOf(110f) }
     var quality by remember { mutableStateOf(48f) }
     var grayscale by remember { mutableStateOf(false) }
@@ -371,10 +418,11 @@ private fun CompressorSection(
     var isWorking by remember { mutableStateOf(false) }
 
     val currentItem = items.getOrNull(selectedIdx)
+    val quickTargets = listOf(200, 300, 450, 750, 1000)
 
     LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
-            Text("Smart PDF Size Reducer", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text("Smart PDF Size Reducer & Auto-Solver", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             if (currentItem != null) {
                 Text(
                     "Selected: ${currentItem.title} (${currentItem.formattedSize(context)})",
@@ -404,9 +452,23 @@ private fun CompressorSection(
         }
 
         item {
-            Text("Target Resolution: ${dpi.toInt()} DPI • JPEG Quality: ${quality.toInt()}%", fontSize = 13.sp)
-            Slider(value = dpi, onValueChange = { dpi = it }, valueRange = 55f..240f)
-            Slider(value = quality, onValueChange = { quality = it }, valueRange = 15f..92f)
+            if (preset == AndroidCompressionPreset.AUTO_TARGET_KB) {
+                Text("Target Ceiling: < $targetKb KB", fontWeight = FontWeight.Bold, color = Color(0xFFEA580C))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(quickTargets) { kb ->
+                        FilterChip(
+                            selected = targetKb == kb,
+                            onClick = { targetKb = kb; result = null },
+                            label = { Text("<$kb KB") }
+                        )
+                    }
+                }
+            } else {
+                Text("Target Resolution: ${dpi.toInt()} DPI • JPEG Quality: ${quality.toInt()}%", fontSize = 13.sp)
+                Slider(value = dpi, onValueChange = { dpi = it }, valueRange = 55f..240f)
+                Slider(value = quality, onValueChange = { quality = it }, valueRange = 15f..92f)
+            }
+
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(checked = grayscale, onCheckedChange = { grayscale = it })
                 Text("Convert to Crisp Grayscale (Extra Size Reduction)", fontSize = 13.sp)
@@ -418,7 +480,11 @@ private fun CompressorSection(
                     isWorking = true
                     scope.launch {
                         val comp = withContext(Dispatchers.IO) {
-                            PdfCompressorEngine.compressPdf(target.file, dpi.toInt(), quality.toInt(), grayscale)
+                            if (preset == AndroidCompressionPreset.AUTO_TARGET_KB) {
+                                PdfCompressorEngine.autoSolveTargetKb(target.file, targetKb, grayscale)
+                            } else {
+                                PdfCompressorEngine.compressPdf(target.file, dpi.toInt(), quality.toInt(), grayscale)
+                            }
                         }
                         result = comp
                         isWorking = false
@@ -427,14 +493,23 @@ private fun CompressorSection(
                 enabled = currentItem != null && !isWorking,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(if (isWorking) "Compressing On-Device..." else "Reduce PDF Size Now")
+                Text(
+                    if (isWorking) "Solving Optimal DPI & Quality..."
+                    else if (preset == AndroidCompressionPreset.AUTO_TARGET_KB) "Auto-Fit Under $targetKb KB Now"
+                    else "Reduce PDF Size Now"
+                )
             }
         }
 
         result?.let { res ->
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            "Optimal Settings Used: ${res.appliedDpi} DPI • ${res.appliedQuality}% JPEG Quality",
+                            fontSize = 12.sp,
+                            color = Color.Gray
+                        )
                         Text(
                             "Before: ${Formatter.formatFileSize(context, res.originalBytes)}  →  After: ${Formatter.formatFileSize(context, res.compressedBytes)} (-${String.format("%.1f", res.reductionPercent)}%)",
                             fontWeight = FontWeight.Bold,
@@ -466,103 +541,167 @@ private fun SignerSection(
     var activeStroke by remember { mutableStateOf(listOf<Pair<Float, Float>>()) }
     var customName by remember { mutableStateOf("") }
     var includeDate by remember { mutableStateOf(true) }
+    var normX by remember { mutableStateOf(0.42f) }
+    var normY by remember { mutableStateOf(0.76f) }
+    var rotationDeg by remember { mutableStateOf(0f) }
+    var containerSize by remember { mutableStateOf(IntSize(1, 1)) }
 
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Finger PDF Signer & Date Filler", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+    val pagePreview = remember(currentItem) {
+        currentItem?.let { PdfSignerEngine.renderPagePreview(it.file, 0) }
+    }
 
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(160.dp)
-                .background(Color.White, RoundedCornerShape(14.dp))
-                .border(1.5.dp, Color(0xFF4338CA), RoundedCornerShape(14.dp))
-                .pointerInput(Unit) {
-                    detectDragGestures(
-                        onDragStart = { offset ->
-                            activeStroke = listOf(offset.x to offset.y)
-                        },
-                        onDrag = { change, _ ->
-                            activeStroke = activeStroke + (change.position.x to change.position.y)
-                        },
-                        onDragEnd = {
-                            if (activeStroke.size > 1) {
-                                strokes = strokes + listOf(activeStroke)
-                            }
-                            activeStroke = emptyList()
-                        }
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item {
+            Text("Interactive Drag-on-Page PDF Signer", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+
+            if (pagePreview != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(260.dp)
+                        .background(Color.White, RoundedCornerShape(12.dp))
+                        .border(1.dp, Color.LightGray, RoundedCornerShape(12.dp))
+                        .onSizeChanged { containerSize = it }
+                ) {
+                    Image(
+                        bitmap = pagePreview.asImageBitmap(),
+                        contentDescription = "PDF Page Preview",
+                        modifier = Modifier.fillMaxSize()
                     )
-                }
-        ) {
-            ComposeCanvas(modifier = Modifier.fillMaxSize()) {
-                val all = if (activeStroke.isNotEmpty()) strokes + listOf(activeStroke) else strokes
-                for (s in all) {
-                    if (s.size < 2) continue
-                    val p = Path().apply {
-                        moveTo(s[0].first, s[0].second)
-                        for (pt in s.drop(1)) lineTo(pt.first, pt.second)
+
+                    Box(
+                        modifier = Modifier
+                            .offset {
+                                IntOffset(
+                                    x = (normX * containerSize.width - 70).roundToInt(),
+                                    y = (normY * containerSize.height - 28).roundToInt()
+                                )
+                            }
+                            .background(Color(0x224338CA), RoundedCornerShape(8.dp))
+                            .border(1.5.dp, Color(0xFF4338CA), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                            .pointerInput(Unit) {
+                                detectDragGestures { change, dragAmount ->
+                                    change.consume()
+                                    normX = (normX + dragAmount.x / containerSize.width.coerceAtLeast(1)).coerceIn(0.1f, 0.9f)
+                                    normY = (normY + dragAmount.y / containerSize.height.coerceAtLeast(1)).coerceIn(0.1f, 0.9f)
+                                }
+                            }
+                    ) {
+                        Text("Drag Signature Here", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4338CA))
                     }
-                    drawPath(p, color = Color(0xFF1E3A8A), style = Stroke(width = 6f))
                 }
             }
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            OutlinedButton(onClick = { strokes = emptyList(); activeStroke = emptyList() }) {
-                Text("Clear Signature Pad")
-            }
-        }
-
-        OutlinedTextField(
-            value = customName,
-            onValueChange = { customName = it },
-            label = { Text("Optional Name / Title Stamp") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(checked = includeDate, onCheckedChange = { includeDate = it })
-            Text("Include Today's Date Stamp")
-        }
-
-        Button(
-            onClick = {
-                val target = currentItem ?: return@Button
-                scope.launch {
-                    val bytes = withContext(Dispatchers.IO) {
-                        PdfSignerEngine.stampSignatureOnPdf(
-                            sourceFile = target.file,
-                            targetPageIndex = 0,
-                            strokes = strokes,
-                            inkColor = AndroidColor.rgb(20, 50, 140),
-                            normX = 0.42f,
-                            normY = 0.78f,
-                            widthRatio = 0.35f,
-                            customStampText = customName,
-                            includeDate = includeDate
+        item {
+            Text("Draw Signature Below:", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(145.dp)
+                    .background(Color.White, RoundedCornerShape(14.dp))
+                    .border(1.5.dp, Color(0xFF4338CA), RoundedCornerShape(14.dp))
+                    .pointerInput(Unit) {
+                        detectDragGestures(
+                            onDragStart = { offset ->
+                                activeStroke = listOf(offset.x to offset.y)
+                            },
+                            onDrag = { change, _ ->
+                                activeStroke = activeStroke + (change.position.x to change.position.y)
+                            },
+                            onDragEnd = {
+                                if (activeStroke.size > 1) {
+                                    strokes = strokes + listOf(activeStroke)
+                                }
+                                activeStroke = emptyList()
+                            }
                         )
                     }
-                    onSaveSigned(bytes, target.title)
+            ) {
+                ComposeCanvas(modifier = Modifier.fillMaxSize()) {
+                    val all = if (activeStroke.isNotEmpty()) strokes + listOf(activeStroke) else strokes
+                    for (s in all) {
+                        if (s.size < 2) continue
+                        val p = Path().apply {
+                            moveTo(s[0].first, s[0].second)
+                            for (pt in s.drop(1)) lineTo(pt.first, pt.second)
+                        }
+                        drawPath(p, color = Color(0xFF1E3A8A), style = Stroke(width = 6f))
+                    }
                 }
-            },
-            enabled = currentItem != null,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Stamp Signature & Save Signed PDF")
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedButton(onClick = { strokes = emptyList(); activeStroke = emptyList() }) {
+                    Text("Clear Pad")
+                }
+                Text("Angle: ${rotationDeg.toInt()}°", fontSize = 12.sp)
+                Slider(value = rotationDeg, onValueChange = { rotationDeg = it }, valueRange = -45f..45f, modifier = Modifier.weight(1f))
+            }
+
+            OutlinedTextField(
+                value = customName,
+                onValueChange = { customName = it },
+                label = { Text("Optional Name / Title Stamp") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = includeDate, onCheckedChange = { includeDate = it })
+                Text("Include Today's Date Stamp")
+            }
+
+            Button(
+                onClick = {
+                    val target = currentItem ?: return@Button
+                    scope.launch {
+                        val bytes = withContext(Dispatchers.IO) {
+                            PdfSignerEngine.stampSignatureOnPdf(
+                                sourceFile = target.file,
+                                targetPageIndex = 0,
+                                strokes = strokes,
+                                inkColor = AndroidColor.rgb(20, 50, 140),
+                                normX = normX,
+                                normY = normY,
+                                widthRatio = 0.35f,
+                                rotationDegrees = rotationDeg,
+                                customStampText = customName,
+                                includeDate = includeDate
+                            )
+                        }
+                        onSaveSigned(bytes, target.title)
+                    }
+                },
+                enabled = currentItem != null,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Stamp Signature & Save Signed PDF")
+            }
         }
     }
 }
 
 @Composable
-private fun OcrSection(items: List<PdfVaultItem>) {
+private fun OcrSection(
+    items: List<PdfVaultItem>,
+    onSaveSearchablePdf: (ByteArray, String) -> Unit
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val currentItem = items.firstOrNull()
     var pages by remember { mutableStateOf(listOf<OcrPageItem>()) }
     var isRunning by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+
+    val filteredPages = remember(pages, searchQuery) {
+        if (searchQuery.isBlank()) pages
+        else pages.filter { it.recognizedText.contains(searchQuery, ignoreCase = true) }
+    }
 
     LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
-            Text("100% Offline On-Device OCR", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text("100% Offline On-Device OCR & Searchable PDF", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Button(
                 onClick = {
                     val target = currentItem ?: return@Button
@@ -583,19 +722,44 @@ private fun OcrSection(items: List<PdfVaultItem>) {
 
         if (pages.isNotEmpty()) {
             item {
-                OutlinedButton(
-                    onClick = {
-                        val fullText = pages.joinToString("\n\n") { "--- Page ${it.pageNumber} ---\n${it.recognizedText}" }
-                        val cb = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        cb.setPrimaryClip(ClipData.newPlainText("PurePDF OCR", fullText))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = {
+                            val fullText = pages.joinToString("\n\n") { "--- Page ${it.pageNumber} ---\n${it.recognizedText}" }
+                            val cb = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            cb.setPrimaryClip(ClipData.newPlainText("PurePDF OCR", fullText))
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Copy All Text")
                     }
-                ) {
-                    Text("Copy All Extracted Text")
+
+                    Button(
+                        onClick = {
+                            val target = currentItem ?: return@Button
+                            scope.launch {
+                                val searchableBytes = withContext(Dispatchers.IO) {
+                                    OfflineOcrEngine.buildSearchablePdf(target.file, pages)
+                                }
+                                onSaveSearchablePdf(searchableBytes, target.title)
+                            }
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Save Searchable PDF")
+                    }
                 }
+
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    label = { Text("Search inside extracted text...") },
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
 
-        items(pages) { p ->
+        items(filteredPages) { p ->
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Text("Page ${p.pageNumber}", fontWeight = FontWeight.Bold)

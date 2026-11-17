@@ -16,6 +16,24 @@ import java.util.Date
 import java.util.Locale
 
 object PdfSignerEngine {
+    fun renderPagePreview(sourceFile: File, pageIndex: Int): Bitmap? {
+        return try {
+            ParcelFileDescriptor.open(sourceFile, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+                PdfRenderer(pfd).use { renderer ->
+                    val idx = pageIndex.coerceIn(0, (renderer.pageCount - 1).coerceAtLeast(0))
+                    renderer.openPage(idx).use { page ->
+                        val bmp = Bitmap.createBitmap(page.width * 2, page.height * 2, Bitmap.Config.ARGB_8888)
+                        Canvas(bmp).drawColor(Color.WHITE)
+                        page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                        bmp
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     fun stampSignatureOnPdf(
         sourceFile: File,
         targetPageIndex: Int,
@@ -24,6 +42,7 @@ object PdfSignerEngine {
         normX: Float,
         normY: Float,
         widthRatio: Float,
+        rotationDegrees: Float = 0f,
         customStampText: String,
         includeDate: Boolean
     ): ByteArray {
@@ -51,9 +70,13 @@ object PdfSignerEngine {
                             val sigW = w * widthRatio
                             val sigH = sigW * 0.45f
 
+                            canvas.save()
+                            canvas.translate(cx, cy)
+                            canvas.rotate(rotationDegrees)
+
                             if (strokes.isNotEmpty()) {
                                 val sigBmp = renderSignatureBitmap(strokes, 400, 180, inkColor)
-                                val dest = RectF(cx - sigW / 2f, cy - sigH / 2f, cx + sigW / 2f, cy + sigH / 2f)
+                                val dest = RectF(-sigW / 2f, -sigH / 2f, sigW / 2f, sigH / 2f)
                                 canvas.drawBitmap(sigBmp, null, dest, Paint(Paint.FILTER_BITMAP_FLAG))
                                 sigBmp.recycle()
                             }
@@ -72,8 +95,9 @@ object PdfSignerEngine {
                                 }
                                 val line = stampParts.joinToString("  •  ")
                                 val tw = textPaint.measureText(line)
-                                canvas.drawText(line, (cx - tw / 2f).coerceIn(20f, w - tw - 20f), cy + sigH / 2f + 16f, textPaint)
+                                canvas.drawText(line, -tw / 2f, sigH / 2f + 16f, textPaint)
                             }
+                            canvas.restore()
                         }
                         outPdf.finishPage(newPage)
                     }

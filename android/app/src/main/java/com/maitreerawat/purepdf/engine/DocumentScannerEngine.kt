@@ -16,6 +16,11 @@ enum class AndroidScanFilter(val label: String) {
     ORIGINAL_COLOR("Original Color")
 }
 
+enum class AndroidScanLayoutMode(val label: String) {
+    STANDARD_ONE_PER_PAGE("Standard (1 per Page)"),
+    ID_CARD_TWO_UP("2-Sided ID Card (Front + Back on 1 Page)")
+}
+
 object DocumentScannerEngine {
     fun applyFilter(source: Bitmap, filter: AndroidScanFilter): Bitmap {
         if (filter == AndroidScanFilter.ORIGINAL_COLOR) return source
@@ -43,7 +48,15 @@ object DocumentScannerEngine {
         return out
     }
 
-    fun buildWatermarkFreePdf(pages: List<Bitmap>, filter: AndroidScanFilter): ByteArray {
+    fun buildWatermarkFreePdf(
+        pages: List<Bitmap>,
+        filter: AndroidScanFilter,
+        layoutMode: AndroidScanLayoutMode = AndroidScanLayoutMode.STANDARD_ONE_PER_PAGE
+    ): ByteArray {
+        if (layoutMode == AndroidScanLayoutMode.ID_CARD_TWO_UP) {
+            return buildIdCardTwoUpPdf(pages, filter)
+        }
+
         val pdf = PdfDocument()
         val pageW = 612
         val pageH = 792
@@ -56,19 +69,7 @@ object DocumentScannerEngine {
             canvas.drawColor(Color.WHITE)
 
             val processed = applyFilter(rawBmp, filter)
-            val availW = pageW - margin * 2
-            val availH = pageH - margin * 2
-            val aspect = processed.width.toFloat() / processed.height.coerceAtLeast(1).toFloat()
-
-            val destRect = if (availW / availH > aspect) {
-                val w = availH * aspect
-                RectF(margin + (availW - w) / 2f, margin, margin + (availW + w) / 2f, margin + availH)
-            } else {
-                val h = availW / aspect
-                RectF(margin, margin + (availH - h) / 2f, margin + availW, margin + (availH + h) / 2f)
-            }
-
-            canvas.drawBitmap(processed, null, destRect, Paint(Paint.FILTER_BITMAP_FLAG))
+            drawAspectFit(canvas, processed, RectF(margin, margin, pageW - margin, pageH - margin))
             pdf.finishPage(page)
         }
 
@@ -76,5 +77,70 @@ object DocumentScannerEngine {
         pdf.writeTo(out)
         pdf.close()
         return out.toByteArray()
+    }
+
+    private fun buildIdCardTwoUpPdf(pages: List<Bitmap>, filter: AndroidScanFilter): ByteArray {
+        val pdf = PdfDocument()
+        val pageW = 612
+        val pageH = 792
+        var idx = 0
+        var pageNum = 1
+
+        while (idx < pages.size) {
+            val pageInfo = PdfDocument.PageInfo.Builder(pageW, pageH, pageNum++).create()
+            val page = pdf.startPage(pageInfo)
+            val canvas = page.canvas
+            canvas.drawColor(Color.WHITE)
+
+            val topSlot = RectF(86f, 78f, 526f, 358f)
+            val bottomSlot = RectF(86f, 424f, 526f, 704f)
+
+            drawCardSlot(canvas, applyFilter(pages[idx], filter), topSlot, "FRONT SIDE")
+            if (idx + 1 < pages.size) {
+                drawCardSlot(canvas, applyFilter(pages[idx + 1], filter), bottomSlot, "BACK SIDE")
+            }
+
+            pdf.finishPage(page)
+            idx += 2
+        }
+
+        val out = ByteArrayOutputStream()
+        pdf.writeTo(out)
+        pdf.close()
+        return out.toByteArray()
+    }
+
+    private fun drawCardSlot(canvas: Canvas, bitmap: Bitmap, slot: RectF, label: String) {
+        val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.GRAY
+            textSize = 10f
+            isFakeBoldText = true
+        }
+        canvas.drawText(label, slot.left, slot.top - 8f, labelPaint)
+
+        val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.LTGRAY
+            style = Paint.Style.STROKE
+            strokeWidth = 1.2f
+        }
+        canvas.drawRoundRect(slot, 12f, 12f, borderPaint)
+
+        val inner = RectF(slot.left + 12f, slot.top + 12f, slot.right - 12f, slot.bottom - 12f)
+        drawAspectFit(canvas, bitmap, inner)
+    }
+
+    private fun drawAspectFit(canvas: Canvas, bitmap: Bitmap, avail: RectF) {
+        val availW = avail.width()
+        val availH = avail.height()
+        val aspect = bitmap.width.toFloat() / bitmap.height.coerceAtLeast(1).toFloat()
+
+        val dest = if (availW / availH > aspect) {
+            val w = availH * aspect
+            RectF(avail.left + (availW - w) / 2f, avail.top, avail.left + (availW + w) / 2f, avail.bottom)
+        } else {
+            val h = availW / aspect
+            RectF(avail.left, avail.top + (availH - h) / 2f, avail.right, avail.top + (availH + h) / 2f)
+        }
+        canvas.drawBitmap(bitmap, null, dest, Paint(Paint.FILTER_BITMAP_FLAG))
     }
 }
