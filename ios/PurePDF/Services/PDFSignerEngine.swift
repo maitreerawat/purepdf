@@ -7,6 +7,7 @@ enum SignatureInkColor: String, CaseIterable, Identifiable {
     case jetBlack = "Jet Black"
     case legalBlue = "Legal Blue"
     case royalNavy = "Fountain Navy"
+    case crimsonInk = "Crimson Ink"
 
     var id: String { rawValue }
 
@@ -15,16 +16,24 @@ enum SignatureInkColor: String, CaseIterable, Identifiable {
         case .jetBlack: return UIColor(red: 0.08, green: 0.08, blue: 0.10, alpha: 1.0)
         case .legalBlue: return UIColor(red: 0.05, green: 0.24, blue: 0.72, alpha: 1.0)
         case .royalNavy: return UIColor(red: 0.07, green: 0.16, blue: 0.40, alpha: 1.0)
+        case .crimsonInk: return UIColor(red: 0.62, green: 0.08, blue: 0.14, alpha: 1.0)
         }
     }
 }
 
 enum PDFSignerEngine {
     private static let savedSignatureKey = "purepdf.saved.signature.png"
+    private static let savedSignatureListKey = "purepdf.saved.signatures.list.v1"
 
     static func saveSignatureImage(_ image: UIImage) {
         if let png = image.pngData() {
             UserDefaults.standard.set(png, forKey: savedSignatureKey)
+            var existing = loadSavedSignatureGalleryData()
+            existing.insert(png, at: 0)
+            if existing.count > 6 {
+                existing = Array(existing.prefix(6))
+            }
+            UserDefaults.standard.set(existing, forKey: savedSignatureListKey)
         }
     }
 
@@ -33,7 +42,49 @@ enum PDFSignerEngine {
         return UIImage(data: data)
     }
 
-    /// Renders a transparent signature image from freehand stroke paths.
+    static func loadSavedSignatureGallery() -> [UIImage] {
+        loadSavedSignatureGalleryData().compactMap { UIImage(data: $0) }
+    }
+
+    static func deleteSavedSignature(at index: Int) {
+        var list = loadSavedSignatureGalleryData()
+        guard index >= 0 && index < list.count else { return }
+        list.remove(at: index)
+        UserDefaults.standard.set(list, forKey: savedSignatureListKey)
+    }
+
+    private static func loadSavedSignatureGalleryData() -> [Data] {
+        UserDefaults.standard.array(forKey: savedSignatureListKey) as? [Data] ?? []
+    }
+
+    /// Renders a high-DPI preview image of a specific PDF page for interactive drag-and-drop placement.
+    static func renderPagePreview(url: URL, pageIndex: Int, maxDimension: CGFloat = 900) -> (image: UIImage, pageAspect: CGFloat)? {
+        guard let doc = PDFDocument(url: url),
+              let page = doc.page(at: pageIndex) else { return nil }
+        let bounds = page.bounds(for: .mediaBox)
+        let aspect = bounds.width / max(1, bounds.height)
+        let scale = min(maxDimension / max(1, bounds.width), maxDimension / max(1, bounds.height))
+        let targetSize = CGSize(width: bounds.width * scale, height: bounds.height * scale)
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        format.opaque = true
+
+        let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
+        let img = renderer.image { ctx in
+            UIColor.white.setFill()
+            ctx.fill(CGRect(origin: .zero, size: targetSize))
+            let cg = ctx.cgContext
+            cg.saveGState()
+            cg.translateBy(x: 0, y: targetSize.height)
+            cg.scaleBy(x: scale, y: -scale)
+            page.draw(with: .mediaBox, to: cg)
+            cg.restoreGState()
+        }
+        return (img, aspect)
+    }
+
+    /// Renders a transparent signature image from freehand stroke paths using smooth quadratic curves.
     static func renderSignatureImage(
         strokes: [[CGPoint]],
         canvasSize: CGSize,
@@ -56,22 +107,33 @@ enum PDFSignerEngine {
             for stroke in strokes where stroke.count > 1 {
                 cg.beginPath()
                 cg.move(to: stroke[0])
-                for pt in stroke.dropFirst() {
-                    cg.addLine(to: pt)
+                if stroke.count == 2 {
+                    cg.addLine(to: stroke[1])
+                } else {
+                    for i in 1..<(stroke.count - 1) {
+                        let prev = stroke[i]
+                        let next = stroke[i + 1]
+                        let mid = CGPoint(x: (prev.x + next.x) * 0.5, y: (prev.y + next.y) * 0.5)
+                        cg.addQuadCurve(to: mid, control: prev)
+                    }
+                    if let last = stroke.last {
+                        cg.addLine(to: last)
+                    }
                 }
                 cg.strokePath()
             }
         }
     }
 
-    /// Flattens a drawn signature image and optional custom text / date stamp onto a target page of a PDF.
-    /// `normalizedPosition` is in [0, 1] x [0, 1] relative to the page mediaBox.
+    /// Flattens a drawn signature image, rotation angle, and optional custom text / date stamp onto a target page of a PDF.
+    /// `normalizedPosition` is in [0, 1] x [0, 1] relative to the top-left of the page mediaBox.
     static func stampSignature(
         onPDF sourceURL: URL,
         targetPageIndex: Int,
         signatureImage: UIImage?,
         normalizedPosition: CGPoint,
         signatureWidthRatio: CGFloat,
+        rotationDegrees: Double = 0.0,
         customStampText: String,
         includeDateStamp: Bool
     ) -> Data? {
@@ -95,18 +157,23 @@ enum PDFSignerEngine {
                 if idx == targetPageIndex {
                     let centerX = bounds.minX + normalizedPosition.x * bounds.width
                     let centerY = bounds.minY + normalizedPosition.y * bounds.height
+                    let sigW = bounds.width * max(0.12, min(0.75, signatureWidthRatio))
+                    var sigH: CGFloat = 0
+
+                    cg.saveGState()
+                    cg.translateBy(x: centerX, y: centerY)
+                    cg.rotate(by: CGFloat(rotationDegrees * .pi / 180.0))
 
                     if let sig = signatureImage {
                         let aspect = sig.size.height / max(1, sig.size.width)
-                        let sigW = bounds.width * max(0.15, min(0.65, signatureWidthRatio))
-                        let sigH = sigW * aspect
-                        let sigRect = CGRect(
-                            x: centerX - sigW / 2,
-                            y: centerY - sigH / 2,
+                        sigH = sigW * aspect
+                        let localSigRect = CGRect(
+                            x: -sigW / 2,
+                            y: -sigH / 2,
                             width: sigW,
                             height: sigH
                         )
-                        sig.draw(in: sigRect)
+                        sig.draw(in: localSigRect)
                     }
 
                     var stampLines: [String] = []
@@ -122,16 +189,18 @@ enum PDFSignerEngine {
                     if !stampLines.isEmpty {
                         let combined = stampLines.joined(separator: "  •  ")
                         let attrs: [NSAttributedString.Key: Any] = [
-                            .font: UIFont.systemFont(ofSize: 11.5, weight: .semibold),
+                            .font: UIFont.systemFont(ofSize: 11.0, weight: .semibold),
                             .foregroundColor: UIColor(red: 0.08, green: 0.15, blue: 0.35, alpha: 0.92)
                         ]
                         let strSize = (combined as NSString).size(withAttributes: attrs)
                         let textPt = CGPoint(
-                            x: max(20, min(bounds.width - strSize.width - 20, centerX - strSize.width / 2)),
-                            y: min(bounds.height - 28, centerY + 36)
+                            x: -strSize.width / 2,
+                            y: (sigH / 2) + 4
                         )
                         (combined as NSString).draw(at: textPt, withAttributes: attrs)
                     }
+
+                    cg.restoreGState()
                 }
             }
         }
