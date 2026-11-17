@@ -66,20 +66,29 @@ enum PDFPageToolkit {
         return insertIndex > 0 ? merged.dataRepresentation() : nil
     }
 
-    /// Rotates a specific page inside a PDF by 90 degrees clockwise and returns updated PDF data.
-    static func rotatePage(in url: URL, pageIndex: Int) -> Data? {
-        guard let doc = PDFDocument(url: url),
-              let page = doc.page(at: pageIndex) else { return nil }
-        page.rotation = (page.rotation + 90) % 360
-        return doc.dataRepresentation()
+    /// Encrypts a PDF on-device with a user/owner password using native PDFKit options.
+    static func encryptPDF(at sourceURL: URL, password: String) -> Data? {
+        let trimmed = password.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let doc = PDFDocument(url: sourceURL) else { return nil }
+
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("purepdf_locked_\(UUID().uuidString).pdf")
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+
+        let options: [PDFDocumentWriteOption: Any] = [
+            .userPasswordOption: trimmed,
+            .ownerPasswordOption: trimmed
+        ]
+        guard doc.write(to: tempURL, withOptions: options) else { return nil }
+        return try? Data(contentsOf: tempURL)
     }
 
-    /// Deletes a specific page from a PDF (if pageCount > 1) and returns updated PDF data.
-    static func deletePage(in url: URL, pageIndex: Int) -> Data? {
-        guard let doc = PDFDocument(url: url),
-              doc.pageCount > 1,
-              pageIndex >= 0 && pageIndex < doc.pageCount else { return nil }
-        doc.removePage(at: pageIndex)
+    /// Unlocks an encrypted PDF on-device given its password and returns an unencrypted copy.
+    static func unlockPDF(at sourceURL: URL, password: String) -> Data? {
+        guard let doc = PDFDocument(url: sourceURL) else { return nil }
+        if doc.isLocked {
+            guard doc.unlock(withPassword: password) else { return nil }
+        }
         return doc.dataRepresentation()
     }
 }

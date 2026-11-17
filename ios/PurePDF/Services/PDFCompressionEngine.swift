@@ -6,6 +6,7 @@ import CoreImage
 
 /// Presets designed for real-world upload limits (government/visa portals, university submissions, email).
 enum CompressionPreset: String, CaseIterable, Identifiable {
+    case autoTargetKB = "Smart Target KB Auto-Solver"
     case extremePortal = "Strict Portal (<300 KB)"
     case standardPortal = "Standard Upload (<500 KB)"
     case balancedEmail = "Balanced Email (<1.5 MB)"
@@ -16,6 +17,7 @@ enum CompressionPreset: String, CaseIterable, Identifiable {
 
     var defaultDPI: Double {
         switch self {
+        case .autoTargetKB: return 110
         case .extremePortal: return 78
         case .standardPortal: return 110
         case .balancedEmail: return 145
@@ -26,6 +28,7 @@ enum CompressionPreset: String, CaseIterable, Identifiable {
 
     var defaultJPEGQuality: Double {
         switch self {
+        case .autoTargetKB: return 0.50
         case .extremePortal: return 0.32
         case .standardPortal: return 0.48
         case .balancedEmail: return 0.65
@@ -36,6 +39,7 @@ enum CompressionPreset: String, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
+        case .autoTargetKB: return "Binary-searches the highest DPI & quality that fits under your exact KB limit"
         case .extremePortal: return "78 DPI • Maximum size reduction for strict web forms"
         case .standardPortal: return "110 DPI • Crisp text at ~70–85% smaller file size"
         case .balancedEmail: return "145 DPI • Ideal balance of sharpness and compact size"
@@ -50,6 +54,9 @@ struct CompressionResult {
     let originalBytes: Int64
     let compressedBytes: Int64
     let pageCount: Int
+    let appliedDPI: Int
+    let appliedQualityPercent: Int
+    let metTargetKB: Bool
 
     var savedBytes: Int64 {
         max(0, originalBytes - compressedBytes)
@@ -57,11 +64,7 @@ struct CompressionResult {
 
     var reductionPercentage: Double {
         guard originalBytes > 0 else { return 0 }
-        return Double(OriginalDelta) / Double(originalBytes) * 100.0
-    }
-
-    private var OriginalDelta: Int64 {
-        originalBytes - compressedBytes
+        return Double(originalBytes - compressedBytes) / Double(originalBytes) * 100.0
     }
 
     var formattedOriginal: String {
@@ -74,6 +77,85 @@ struct CompressionResult {
 }
 
 enum PDFCompressionEngine {
+    /// Automatically binary-searches across a 10-step (DPI, JPEG Quality) ladder to find the highest-fidelity PDF
+    /// that strictly fits under `targetKB * 1024` bytes.
+    static func autoSolveTargetKB(
+        at sourceURL: URL,
+        targetKB: Int,
+        convertToGrayscale: Bool
+    ) -> CompressionResult? {
+        let targetBytes = Int64(max(30, targetKB)) * 1024
+        // Ordered from highest quality (index 0) to most aggressive compression (index 9)
+        let ladder: [(dpi: Double, quality: Double)] = [
+            (210, 0.84),
+            (180, 0.74),
+            (155, 0.64),
+            (135, 0.56),
+            (118, 0.48),
+            (102, 0.40),
+            (88, 0.34),
+            (74, 0.28),
+            (62, 0.22),
+            (50, 0.15)
+        ]
+
+        var low = 0
+        var high = ladder.count - 1
+        var bestFitting: CompressionResult? = nil
+        var smallestFallback: CompressionResult? = nil
+
+        while low <= high {
+            let mid = (low + high) / 2
+            let step = ladder[mid]
+            guard let candidate = compressPDF(
+                at: sourceURL,
+                dpi: step.dpi,
+                jpegQuality: step.quality,
+                convertToGrayscale: convertToGrayscale
+            ) else {
+                break
+            }
+
+            if smallestFallback == nil || candidate.compressedBytes < smallestFallback!.compressedBytes {
+                smallestFallback = candidate
+            }
+
+            if candidate.compressedBytes <= targetBytes {
+                bestFitting = candidate
+                // Try higher quality (smaller index) to get as close to targetKB as possible without exceeding it
+                high = mid - 1
+            } else {
+                // Need stronger compression (larger index)
+                low = mid + 1
+            }
+        }
+
+        if let fit = bestFitting {
+            return CompressionResult(
+                data: fit.data,
+                originalBytes: fit.originalBytes,
+                compressedBytes: fit.compressedBytes,
+                pageCount: fit.pageCount,
+                appliedDPI: fit.appliedDPI,
+                appliedQualityPercent: fit.appliedQualityPercent,
+                metTargetKB: true
+            )
+        }
+
+        if let fb = smallestFallback {
+            return CompressionResult(
+                data: fb.data,
+                originalBytes: fb.originalBytes,
+                compressedBytes: fb.compressedBytes,
+                pageCount: fb.pageCount,
+                appliedDPI: fb.appliedDPI,
+                appliedQualityPercent: fb.appliedQualityPercent,
+                metTargetKB: fb.compressedBytes <= targetBytes
+            )
+        }
+        return nil
+    }
+
     /// Compresses a PDF completely on-device by rasterizing and re-encoding pages at target DPI and JPEG quality,
     /// with optional grayscale conversion to strip color channel overhead.
     static func compressPDF(
@@ -88,7 +170,8 @@ enum PDFCompressionEngine {
             return nil
         }
 
-        let scaleFactor = CGFloat(max(45.0, min(300.0, dpi)) / 72.0)
+        let clampedDPI = max(45.0, min(300.0, dpi))
+        let scaleFactor = CGFloat(clampedDPI / 72.0)
         let clampedQuality = CGFloat(max(0.10, min(0.95, jpegQuality)))
         let ciContext = CIContext(options: [.useSoftwareRenderer: false])
 
@@ -148,7 +231,10 @@ enum PDFCompressionEngine {
             data: compressedData,
             originalBytes: Int64(originalData.count),
             compressedBytes: Int64(compressedData.count),
-            pageCount: document.pageCount
+            pageCount: document.pageCount,
+            appliedDPI: Int(clampedDPI.rounded()),
+            appliedQualityPercent: Int((clampedQuality * 100.0).rounded()),
+            metTargetKB: true
         )
     }
 }

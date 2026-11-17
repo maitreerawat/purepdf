@@ -3,8 +3,9 @@ import SwiftUI
 import UIKit
 
 enum PageToolkitMode: String, CaseIterable, Identifiable {
-    case organizer = "Visual Page Organizer"
-    case merger = "Merge Multiple PDFs"
+    case organizer = "Pages & Split"
+    case merger = "Merge PDFs"
+    case security = "Lock / Unlock"
 
     var id: String { rawValue }
 }
@@ -17,11 +18,14 @@ struct MergeSplitStudioView: View {
     @State private var targetItemID: UUID?
     @State private var pageThumbnails: [PDFPageThumbnailItem] = []
     @State private var selectedPageIDs: Set<UUID> = []
-    @State private var draggedPage: PDFPageThumbnailItem?
 
     // Multi-PDF Merger Queue state
     @State private var mergeQueue: [PDFVaultItem] = []
     @State private var mergedTitle: String = "Merged_Document"
+
+    // Password Lock / Unlock state
+    @State private var pdfPassword: String = ""
+    @State private var securityBanner: String?
 
     private var targetItem: PDFVaultItem? {
         vault.items.first { $0.id == targetItemID } ?? vault.items.first
@@ -37,15 +41,18 @@ struct MergeSplitStudioView: View {
                 }
                 .pickerStyle(.segmented)
 
-                if mode == .organizer {
+                switch mode {
+                case .organizer:
                     visualPageOrganizerSection
-                } else {
+                case .merger:
                     multiPdfMergerSection
+                case .security:
+                    passwordSecuritySection
                 }
             }
             .padding()
         }
-        .navigationTitle("Page Studio & Merger")
+        .navigationTitle("Page Studio & Security")
         .onAppear {
             if targetItemID == nil {
                 targetItemID = vault.items.first?.id
@@ -321,6 +328,76 @@ struct MergeSplitStudioView: View {
                         .foregroundStyle(.white)
                 }
                 .disabled(mergeQueue.count < 2)
+            }
+        }
+    }
+
+    private var passwordSecuritySection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("On-Device PDF Password Encryption & Unlock")
+                .font(.headline)
+            Text("Protect sensitive tax, ID, or contract PDFs with native AES password encryption—or strip a known password from an encrypted PDF.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Picker("Select Target PDF", selection: $targetItemID) {
+                ForEach(vault.items) { doc in
+                    Text("\(doc.title) (\(doc.formattedSize))").tag(Optional(doc.id))
+                }
+            }
+            .pickerStyle(.menu)
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+
+            SecureField("Enter Password to Lock or Unlock PDF", text: $pdfPassword)
+                .textFieldStyle(.roundedBorder)
+
+            if let msg = securityBanner {
+                Text(msg)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.teal)
+            }
+
+            if let doc = targetItem {
+                HStack(spacing: 12) {
+                    Button {
+                        if let locked = PDFPageToolkit.encryptPDF(at: vault.fileURL(for: doc), password: pdfPassword) {
+                            UINotificationFeedbackGenerator().notificationOccurred(.success)
+                            _ = vault.savePDFData(locked, title: "\(doc.title)_Locked", badgeTag: "Encrypted")
+                            securityBanner = "Saved password-protected PDF to Vault!"
+                            pdfPassword = ""
+                        }
+                    } label: {
+                        Label("Encrypt & Lock PDF", systemImage: "lock.fill")
+                            .font(.subheadline.weight(.bold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 13)
+                            .background(
+                                pdfPassword.isEmpty ? Color.gray : Color.indigo,
+                                in: RoundedRectangle(cornerRadius: 12)
+                            )
+                            .foregroundStyle(.white)
+                    }
+                    .disabled(pdfPassword.isEmpty)
+
+                    Button {
+                        if let unlocked = PDFPageToolkit.unlockPDF(at: vault.fileURL(for: doc), password: pdfPassword) {
+                            UINotificationFeedbackGenerator().notificationOccurred(.success)
+                            _ = vault.savePDFData(unlocked, title: "\(doc.title)_Unlocked", badgeTag: "Unlocked")
+                            securityBanner = "Unlocked & saved unencrypted PDF copy!"
+                            pdfPassword = ""
+                        } else {
+                            securityBanner = "Incorrect password or unable to unlock."
+                        }
+                    } label: {
+                        Label("Unlock PDF", systemImage: "lock.open.fill")
+                            .font(.subheadline.weight(.bold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 13)
+                            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                    }
+                }
             }
         }
     }

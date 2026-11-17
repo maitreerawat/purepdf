@@ -8,9 +8,16 @@ struct OCRStudioView: View {
     @State private var pagesOutput: [OCRPageOutput] = []
     @State private var isRunningOCR = false
     @State private var copiedBanner = false
+    @State private var searchQuery: String = ""
 
     private var selectedItem: PDFVaultItem? {
         vault.items.first { $0.id == selectedItemID } ?? vault.items.first
+    }
+
+    private var filteredPages: [OCRPageOutput] {
+        let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return pagesOutput }
+        return pagesOutput.filter { $0.text.localizedCaseInsensitiveContains(q) }
     }
 
     private var combinedText: String {
@@ -53,21 +60,45 @@ struct OCRStudioView: View {
                     .disabled(selectedItem == nil || isRunningOCR)
 
                     if !pagesOutput.isEmpty {
-                        HStack {
-                            Text("Extracted Text (\(pagesOutput.count) Pages)")
-                                .font(.headline)
-                            Spacer()
+                        HStack(spacing: 10) {
                             Button {
                                 UIPasteboard.general.string = combinedText
                                 copiedBanner = true
                             } label: {
-                                Label(copiedBanner ? "Copied!" : "Copy All", systemImage: "doc.on.doc.fill")
+                                Label(copiedBanner ? "Copied All!" : "Copy All Text", systemImage: "doc.on.doc.fill")
                                     .font(.caption.weight(.bold))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 10)
                             }
                             .buttonStyle(.borderedProminent)
+
+                            if let item = selectedItem {
+                                Button {
+                                    if let searchableData = OCRService.buildSearchablePDF(
+                                        from: vault.fileURL(for: item),
+                                        ocrPages: pagesOutput
+                                    ) {
+                                        UINotificationFeedbackGenerator().notificationOccurred(.success)
+                                        _ = vault.savePDFData(
+                                            searchableData,
+                                            title: "\(item.title)_SearchableOCR",
+                                            badgeTag: "Searchable OCR"
+                                        )
+                                    }
+                                } label: {
+                                    Label("Save Searchable PDF", systemImage: "doc.text.magnifyingglass")
+                                        .font(.caption.weight(.bold))
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 10)
+                                }
+                                .buttonStyle(.bordered)
+                            }
                         }
 
-                        ForEach(pagesOutput) { page in
+                        TextField("Search inside extracted text...", text: $searchQuery)
+                            .textFieldStyle(.roundedBorder)
+
+                        ForEach(filteredPages) { page in
                             VStack(alignment: .leading, spacing: 8) {
                                 HStack {
                                     Text("Page \(page.pageNumber)")

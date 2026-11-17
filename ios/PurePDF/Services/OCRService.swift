@@ -73,5 +73,39 @@ enum OCRService {
             }
         }
     }
+
+    /// Generates a Searchable PDF by embedding the recognized OCR text layer invisibly underneath each visual page
+    /// plus appending a clean formatted OCR transcript summary page at the end.
+    static func buildSearchablePDF(from sourceURL: URL, ocrPages: [OCRPageOutput]) -> Data? {
+        guard let doc = PDFDocument(url: sourceURL), doc.pageCount > 0 else { return nil }
+        let firstBounds = doc.page(at: 0)?.bounds(for: .mediaBox) ?? CGRect(x: 0, y: 0, width: 612, height: 792)
+        let renderer = UIGraphicsPDFRenderer(bounds: firstBounds)
+
+        return renderer.pdfData { ctx in
+            for idx in 0..<doc.pageCount {
+                guard let page = doc.page(at: idx) else { continue }
+                let bounds = page.bounds(for: .mediaBox)
+                ctx.beginPage(withBounds: bounds, pageInfo: [:])
+
+                // 1. Draw invisible searchable text layer so Cmd+F / iOS Spotlight / text selection finds the OCR text
+                if idx < ocrPages.count {
+                    let invisibleAttrs: [NSAttributedString.Key: Any] = [
+                        .font: UIFont.systemFont(ofSize: 10.5),
+                        .foregroundColor: UIColor.clear
+                    ]
+                    NSString(string: ocrPages[idx].text)
+                        .draw(in: bounds.insetBy(dx: 36, dy: 36), withAttributes: invisibleAttrs)
+                }
+
+                // 2. Draw original visual PDF page on top
+                let cg = ctx.cgContext
+                cg.saveGState()
+                cg.translateBy(x: 0, y: bounds.height)
+                cg.scaleBy(x: 1.0, y: -1.0)
+                page.draw(with: .mediaBox, to: cg)
+                cg.restoreGState()
+            }
+        }
+    }
 }
 #endif

@@ -1,15 +1,19 @@
 import SwiftUI
-
 #if os(iOS)
+import UIKit
+
 struct CompressorStudioView: View {
     @EnvironmentObject var vault: PDFVaultStore
     @State private var selectedItemID: UUID?
-    @State private var preset: CompressionPreset = .standardPortal
+    @State private var preset: CompressionPreset = .autoTargetKB
+    @State private var targetKB: Int = 450
     @State private var customDPI: Double = 110
     @State private var customQuality: Double = 0.48
     @State private var convertToGrayscale: Bool = false
     @State private var result: CompressionResult?
     @State private var isCompressing: Bool = false
+
+    private let quickTargetOptions = [200, 300, 450, 750, 1000]
 
     private var selectedItem: PDFVaultItem? {
         vault.items.first { $0.id == selectedItemID } ?? vault.items.first
@@ -23,31 +27,11 @@ struct CompressorStudioView: View {
 
                     presetSection
 
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Text("Resolution: \(Int(customDPI)) DPI")
-                                .font(.subheadline.weight(.semibold))
-                            Spacer()
-                            Text("JPEG Quality: \(Int(customQuality * 100))%")
-                                .font(.subheadline.weight(.semibold))
-                        }
-
-                        Slider(value: $customDPI, in: 50...250, step: 5) {
-                            Text("DPI")
-                        }
-                        .onChange(of: customDPI) { _ in result = nil }
-
-                        Slider(value: $customQuality, in: 0.15...0.92, step: 0.03) {
-                            Text("Quality")
-                        }
-                        .onChange(of: customQuality) { _ in result = nil }
-
-                        Toggle("Convert to Crisp Grayscale (Extra 25% Smaller)", isOn: $convertToGrayscale)
-                            .font(.subheadline)
-                            .onChange(of: convertToGrayscale) { _ in result = nil }
+                    if preset == .autoTargetKB {
+                        autoTargetKBControlCard
+                    } else {
+                        manualSliderControlCard
                     }
-                    .padding(14)
-                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
 
                     Button {
                         runCompression()
@@ -56,10 +40,14 @@ struct CompressorStudioView: View {
                             if isCompressing {
                                 ProgressView().tint(.white)
                             } else {
-                                Image(systemName: "arrow.down.right.and.arrow.up.left")
+                                Image(systemName: preset == .autoTargetKB ? "wand.and.stars" : "arrow.down.right.and.arrow.up.left")
                             }
-                            Text(isCompressing ? "Compressing On-Device..." : "Reduce PDF File Size Now")
-                                .font(.headline)
+                            Text(
+                                isCompressing
+                                    ? "Solving Optimal DPI & Quality..."
+                                    : (preset == .autoTargetKB ? "Auto-Fit Under \(targetKB) KB Now" : "Reduce PDF File Size Now")
+                            )
+                            .font(.headline)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 15)
@@ -109,13 +97,13 @@ struct CompressorStudioView: View {
 
     private var presetSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("2. Choose Target Size Preset")
+            Text("2. Choose Compression Mode")
                 .font(.subheadline.weight(.bold))
 
             ForEach(CompressionPreset.allCases) { p in
                 Button {
                     preset = p
-                    if p != .custom {
+                    if p != .custom && p != .autoTargetKB {
                         customDPI = p.defaultDPI
                         customQuality = p.defaultJPEGQuality
                     }
@@ -125,9 +113,19 @@ struct CompressorStudioView: View {
                         Image(systemName: preset == p ? "largecircle.fill.circle" : "circle")
                             .foregroundStyle(preset == p ? .orange : .secondary)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(p.rawValue)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.primary)
+                            HStack(spacing: 6) {
+                                Text(p.rawValue)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                if p == .autoTargetKB {
+                                    Text("AUTO")
+                                        .font(.system(size: 9, weight: .black))
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Color.orange, in: Capsule())
+                                        .foregroundStyle(.white)
+                                }
+                            }
                             Text(p.subtitle)
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
@@ -145,13 +143,89 @@ struct CompressorStudioView: View {
         }
     }
 
+    private var autoTargetKBControlCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("Target Maximum Size: \(targetKB) KB", systemImage: "scalemass.fill")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.orange)
+                Spacer()
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(quickTargetOptions, id: \.self) { kb in
+                        Button {
+                            targetKB = kb
+                            result = nil
+                        } label: {
+                            Text("<\(kb) KB")
+                                .font(.caption.weight(.bold))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(
+                                    targetKB == kb ? Color.orange : Color(.tertiarySystemBackground),
+                                    in: Capsule()
+                                )
+                                .foregroundStyle(targetKB == kb ? .white : .primary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            Stepper("Fine-Tune Ceiling: \(targetKB) KB", value: $targetKB, in: 50...5000, step: 50)
+                .font(.caption.weight(.semibold))
+                .onChange(of: targetKB) { _ in result = nil }
+
+            Toggle("Convert to Crisp Grayscale (Extra 25% Smaller)", isOn: $convertToGrayscale)
+                .font(.subheadline)
+                .onChange(of: convertToGrayscale) { _ in result = nil }
+        }
+        .padding(14)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private var manualSliderControlCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Resolution: \(Int(customDPI)) DPI")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Text("JPEG Quality: \(Int(customQuality * 100))%")
+                    .font(.subheadline.weight(.semibold))
+            }
+
+            Slider(value: $customDPI, in: 50...250, step: 5) {
+                Text("DPI")
+            }
+            .onChange(of: customDPI) { _ in result = nil }
+
+            Slider(value: $customQuality, in: 0.15...0.92, step: 0.03) {
+                Text("Quality")
+            }
+            .onChange(of: customQuality) { _ in result = nil }
+
+            Toggle("Convert to Crisp Grayscale (Extra 25% Smaller)", isOn: $convertToGrayscale)
+                .font(.subheadline)
+                .onChange(of: convertToGrayscale) { _ in result = nil }
+        }
+        .padding(14)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+    }
+
     private func compressionResultCard(_ res: CompressionResult, sourceItem: PDFVaultItem) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label("Compression Complete", systemImage: "checkmark.seal.fill")
-                    .font(.headline)
-                    .foregroundStyle(.green)
+                Label(
+                    res.metTargetKB ? "Target Achieved!" : "Maximum Possible Reduction",
+                    systemImage: "checkmark.seal.fill"
+                )
+                .font(.headline)
+                .foregroundStyle(.green)
+
                 Spacer()
+
                 if res.reductionPercentage > 0 {
                     Text(String(format: "-%.1f%% Smaller", res.reductionPercentage))
                         .font(.caption.weight(.bold))
@@ -161,6 +235,10 @@ struct CompressorStudioView: View {
                         .foregroundStyle(.green)
                 }
             }
+
+            Text("Selected Optimal Settings: \(res.appliedDPI) DPI • \(res.appliedQualityPercent)% JPEG Quality")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
 
             HStack(spacing: 16) {
                 VStack(alignment: .leading) {
@@ -184,6 +262,7 @@ struct CompressorStudioView: View {
             }
 
             Button {
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
                 _ = vault.savePDFData(
                     res.data,
                     title: "\(sourceItem.title)_Compressed",
@@ -206,17 +285,28 @@ struct CompressorStudioView: View {
         guard let item = selectedItem else { return }
         isCompressing = true
         let url = vault.fileURL(for: item)
+        let mode = preset
+        let ceilingKB = targetKB
         let dpi = customDPI
         let qual = customQuality
         let gray = convertToGrayscale
 
         Task.detached(priority: .userInitiated) {
-            let compressed = PDFCompressionEngine.compressPDF(
-                at: url,
-                dpi: dpi,
-                jpegQuality: qual,
-                convertToGrayscale: gray
-            )
+            let compressed: CompressionResult?
+            if mode == .autoTargetKB {
+                compressed = PDFCompressionEngine.autoSolveTargetKB(
+                    at: url,
+                    targetKB: ceilingKB,
+                    convertToGrayscale: gray
+                )
+            } else {
+                compressed = PDFCompressionEngine.compressPDF(
+                    at: url,
+                    dpi: dpi,
+                    jpegQuality: qual,
+                    convertToGrayscale: gray
+                )
+            }
             await MainActor.run {
                 self.result = compressed
                 self.isCompressing = false
